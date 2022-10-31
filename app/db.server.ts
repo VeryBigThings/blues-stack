@@ -1,10 +1,15 @@
-import { PrismaClient } from "@prisma/client";
+import { Pool } from "pg";
+import { ConsoleLogQueryRunner } from "ts-sql-query/queryRunners/ConsoleLogQueryRunner";
+import { PgPoolQueryRunner } from "ts-sql-query/queryRunners/PgPoolQueryRunner";
+import { TypeSafePostgreSqlConnection } from "ts-sql-query/connections/TypeSafePostgreSqlConnection";
 import invariant from "tiny-invariant";
 
-let prisma: PrismaClient;
+class DBConection extends TypeSafePostgreSqlConnection<"DBConnection"> {}
+
+let db: Client;
 
 declare global {
-  var __db__: PrismaClient;
+  var __db__: Client;
 }
 
 // this is needed because in development we don't want to restart
@@ -12,12 +17,12 @@ declare global {
 // create a new connection to the DB with every change either.
 // in production we'll have a single connection to the DB.
 if (process.env.NODE_ENV === "production") {
-  prisma = getClient();
+  db = getClient();
 } else {
   if (!global.__db__) {
     global.__db__ = getClient();
   }
-  prisma = global.__db__;
+  db = global.__db__;
 }
 
 function getClient() {
@@ -41,22 +46,20 @@ function getClient() {
     }
   }
 
-  console.log(`🔌 setting up prisma client to ${databaseUrl.host}`);
+  console.log(`🔌 setting up db client to ${databaseUrl.host}`);
   // NOTE: during development if you change anything in this function, remember
   // that this only runs once per server restart and won't automatically be
   // re-run per request like everything else is. So if you need to change
   // something in this file, you'll need to manually restart the server.
-  const client = new PrismaClient({
-    datasources: {
-      db: {
-        url: databaseUrl.toString(),
-      },
-    },
+  const pool = new Pool({
+    connectionString: databaseUrl.toString(),
   });
-  // connect eagerly
-  client.$connect();
 
-  return client;
+  const connection = new DBConection(
+    new ConsoleLogQueryRunner(new PgPoolQueryRunner(pool))
+  );
+
+  return connection;
 }
 
-export { prisma };
+export { db };
